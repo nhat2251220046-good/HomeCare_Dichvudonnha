@@ -6,6 +6,7 @@ import { ClipboardList } from "lucide-react"; // 👉 icon đẹp
 import NotificationBell from "./NotificationBell";
 
 export default function Header() {
+  // Mảng chứa danh sách các đường dẫn điều hướng trên thanh điều hướng
   const navLinks = [
     { title: "TRANG CHỦ", href: "/" },
     { title: "DỊCH VỤ DỌN NHÀ", href: "/service" },
@@ -13,15 +14,18 @@ export default function Header() {
     { title: "LIÊN HỆ", href: "/contact" },
   ];
 
+  // Các trạng thái đóng/mở menu mobile và hiệu ứng cuộn trang (scroll)
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  // Safe wrappers so header can render without ClerkProvider in dev
+
+  // Hàm bọc an toàn cho useClerk để tránh crash ứng dụng ở môi trường dev khi chưa cấu hình Clerk
   function useSafeClerk() {
     try {
       return useClerk();
     } catch (e) {
       return {
         openSignIn: () => {
+          // Tạo tài khoản khách giả lập để kiểm thử (Mock Data Dev)
           const dev = {
             id: "dev-customer-1",
             firstName: "Khách",
@@ -42,6 +46,7 @@ export default function Header() {
     }
   }
 
+  // Hàm bọc an toàn để lấy thông tin user từ Clerk hoặc lấy từ sessionStorage nếu đang ở chế độ dev
   function useSafeUser() {
     try {
       return useUser();
@@ -72,16 +77,17 @@ export default function Header() {
   const { user } = useSafeUser();
   const navigate = useNavigate();
 
+  // Kiểm tra sự tồn tại của Clerk Key trong biến môi trường env
   const hasClerk = Boolean(import.meta.env.VITE_CLERK_PUBLISHABLE_KEY && import.meta.env.VITE_CLERK_PUBLISHABLE_KEY !== 'REPLACE_ME');
 
-  // hiệu ứng shadow khi scroll
+  // Lắng nghe sự kiện cuộn trang để thêm hiệu ứng đổ bóng (shadow) cho header
   useEffect(() => {
     const handleScroll = () => setIsScrolled(window.scrollY > 5);
     window.addEventListener("scroll", handleScroll);
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
 
-  // Đồng bộ customer với backend
+  // Đồng bộ thông tin tài khoản người dùng (Customer) với hệ thống cơ sở dữ liệu backend
   useEffect(() => {
     const syncCustomer = async () => {
       if (user) {
@@ -104,17 +110,16 @@ export default function Header() {
 
   return (
     <header
-      className={`fixed w-full z-50 bg-white transition-shadow duration-300 ${
-        isScrolled ? "shadow-md" : ""
-      }`}
+      className={`fixed w-full z-50 bg-white transition-shadow duration-300 ${isScrolled ? "shadow-md" : ""
+        }`}
     >
       <div className="container mx-auto flex items-center justify-between px-4 py-3 md:py-4">
-        {/* Logo */}
+        {/* Logo ứng dụng */}
         <Link to="/" className="flex items-center">
           <h1 className="text-teal-600 font-bold text-4xl">HomeCare</h1>
         </Link>
 
-        {/* Desktop Menu */}
+        {/* Danh sách Menu hiển thị trên màn hình Desktop lớn */}
         <nav className="hidden md:flex items-center gap-8 font-medium text-gray-800">
           {navLinks.map((link, i) => (
             <Link
@@ -127,7 +132,7 @@ export default function Header() {
           ))}
         </nav>
 
-        {/* Desktop User */}
+        {/* Khối quản lý trạng thái đăng nhập và tài khoản trên Desktop */}
         <div className="hidden md:flex items-center gap-4">
           {user ? (
             hasClerk ? (
@@ -170,7 +175,7 @@ export default function Header() {
           )}
         </div>
 
-        {/* Mobile Menu Button */}
+        {/* Nút Hamburger kích hoạt menu cho thiết bị di động Mobile */}
         <div className="md:hidden flex items-center">
           <button onClick={() => setIsMenuOpen(!isMenuOpen)}>
             <svg
@@ -188,12 +193,12 @@ export default function Header() {
         </div>
       </div>
 
-      {/* Mobile Menu */}
+      {/* Giao diện Menu hiển thị tràn màn hình khi được mở trên Mobile */}
       <div
-        className={`fixed top-0 left-0 w-full h-screen bg-white text-gray-800 flex flex-col items-center justify-center gap-8 text-lg font-medium transition-transform duration-300 ${
-          isMenuOpen ? "translate-x-0" : "-translate-x-full"
-        }`}
+        className={`fixed top-0 left-0 w-full h-screen bg-white text-gray-800 flex flex-col items-center justify-center gap-8 text-lg font-medium transition-transform duration-300 ${isMenuOpen ? "translate-x-0" : "-translate-x-full"
+          }`}
       >
+        {/* Nút Đóng (X) Menu trên giao diện mobile */}
         <button
           className="absolute top-4 right-4 text-[#ff8228]"
           onClick={() => setIsMenuOpen(false)}
@@ -216,6 +221,7 @@ export default function Header() {
           </Link>
         ))}
 
+        {/* Quản lý trạng thái đăng nhập/đăng xuất riêng cho giao diện Mobile */}
         {user ? (
           <div className="mt-6 flex flex-col items-center gap-4">
             <NotificationBell />

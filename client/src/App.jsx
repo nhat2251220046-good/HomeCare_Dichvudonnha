@@ -9,15 +9,20 @@ import AdminDashboard from './pages/admin/AdminDashboard'
 import LoginAdmin from './pages/admin/LoginAdmin'
 import { useUser } from '@clerk/clerk-react';
 
-// Safe wrapper for useUser so app can run when ClerkProvider is not present
+// --- HÀM BỌC AN TOÀN CHO CLERK AUTHENTICATION (SAFE HOOK WRAPPER) ---
+// Giải pháp chống crash ứng dụng khi chạy ở môi trường Local/Dev mà chưa cấu hình ClerkProvider.
+// Hàm tự động chuyển hướng đọc dữ liệu user từ sessionStorage nếu thư viện Clerk ném lỗi.
 function useSafeUser() {
   try {
-    return useUser();
+    return useUser(); // Gọi hook gốc từ thư viện Clerk React
   } catch (e) {
     try {
+      // Cơ chế dự phòng (Fallback): Đọc tài khoản mock trong sessionStorage nếu không có Clerk
       const raw = sessionStorage.getItem("clerkUser") || sessionStorage.getItem("user");
       if (!raw) return { user: null };
       const parsed = JSON.parse(raw);
+
+      // Đồng bộ và giả lập cấu trúc Object giống hệt như dữ liệu trả về từ Clerk
       return {
         user: {
           id: parsed.id || parsed._id || "dev-user",
@@ -28,13 +33,14 @@ function useSafeUser() {
           primaryEmailAddress: { emailAddress: parsed.email || parsed.primaryEmailAddress?.emailAddress || "dev@example.com" },
           primaryPhoneNumber: { phoneNumber: parsed.phone || parsed.primaryPhoneNumber?.phoneNumber || "" },
         },
-        isSignedIn: true,
+        isSignedIn: true, // Xác nhận giả lập trạng thái đã đăng nhập thành công
       };
     } catch (err) {
       return { user: null };
     }
   }
 }
+
 import SyncCustomer from './components/SyncCustomer'
 import { Toaster } from 'react-hot-toast';
 import StaffLayout from './components/staff/StaffLayout'
@@ -70,81 +76,105 @@ import OrderDetailUser from './pages/customer/OrderDetailUser'
 import ServiceDetail from './pages/customer/ServiceDetail'
 
 function App() {
-  const { user } = useSafeUser();
+  const { user } = useSafeUser(); // Trích xuất thông tin người dùng hiện tại
+
   return (
     <>
-    <div className="">
-      {user && <SyncCustomer />}
-      <Routes>
-        <Route element={<MainLayout />}>
-          <Route path="/" element={<HomePage />} />
-          <Route path="/about" element={<About />} />
-          <Route path="/contact" element={<Contact />} />
-          <Route path="/booking/:id" element={<Booking />} />
-          <Route path="/service" element={<Service />} />
-          <Route path="/service/:id" element={<ServiceDetail />} />
-          <Route path="/orders-susscess" element={<BookingSuccess />} />
-          <Route path="/orders/:id" element={<OrderDetailUser />} />
-          <Route path="/orders" element={<OrderHistory customerId={user?.id} />} />
-          <Route path="*" element={<NotFound />} />
-        </Route>
-     
-     
-        <Route path="/manager-login" element={<LoginAdmin />} />
-        {/* admin */}
-        <Route element={<ProtectedRoute allowedRoles={["admin"]} />}>
-          <Route element={<AdminLayout />}>
-            <Route path="/admin-dashboard" element={<AdminLayoutDashboard />}>
-              <Route index element={<AdminDashboard />} />
-              <Route path='profile' element={<ProfilePage />} />
-              {/* nhân viên */}
-              <Route path='employees' element={<EmployeeList />} />
-              <Route path='employees/add' element={<AddEmployee />} />
-              <Route path='employees/:id' element={<EditEmployee />} />
-              {/* khách hàng */}
-              <Route path='customers' element={<CustomerListPage />} />
-              <Route path='customers/add' element={<AddCutomers />} />
-              <Route path='customers/:id' element={<EditCustomers />} />
-              {/* chi nhánh */}
-              <Route path='branches' element={<BranchList />} />
-              <Route path="branches/add" element={<BranchForm />} />
-              <Route path="branches/:id" element={<BranchForm />} />
-              {/* dịch vụ */}
-              <Route path="services" element={<ServiceList />} />
-              <Route path="services/add" element={<ServiceForm />} />
-              <Route path="services/:id" element={<ServiceForm />} />
+      <div className="">
+        {/* Khối đồng bộ dữ liệu tài khoản từ Clerk Authentication sang MongoDB Backend khi đăng nhập */}
+        {user && <SyncCustomer />}
 
-              <Route path="orders" element={<OrderList />} />
-              <Route path="orders/:id" element={<OrderDetail />} />
+        {/* --- ĐỊNH NGHĨA HỆ THỐNG TUYẾN ĐƯỜNG (ROUTES CONFIGURATION) --- */}
+        <Routes>
 
-              <Route path="assign-shifts" element={<AssignShiftsPage />} />
-              
-              <Route path="chat" element={<AdminChat />} />
+          {/* =============== CỤM 1: ROUTES CHO KHÁCH HÀNG (CUSTOMER LAYOUT) =============== */}
+          {/* Tất cả các trang bên dưới đều thừa kế Header/Footer chung từ MainLayout */}
+          <Route element={<MainLayout />}>
+            <Route path="/" element={<HomePage />} />
+            <Route path="/about" element={<About />} />
+            <Route path="/contact" element={<Contact />} />
+            <Route path="/service" element={<Service />} />
+            <Route path="/service/:id" element={<ServiceDetail />} />
 
-              <Route path="*" element={<AdminNotFound />} />
+            {/* Luồng Đặt lịch & Lịch sử đơn hàng của Khách hàng */}
+            <Route path="/booking/:id" element={<Booking />} />
+            <Route path="/orders-susscess" element={<BookingSuccess />} />
+            <Route path="/orders" element={<OrderHistory customerId={user?.id} />} />
+            <Route path="/orders/:id" element={<OrderDetailUser />} />
+
+            {/* Route bắt lỗi 404 cho phân hệ khách hàng khi gõ sai URL */}
+            <Route path="*" element={<NotFound />} />
+          </Route>
+
+          {/* Trang đăng nhập dành riêng cho bộ phận Quản lý & Nhân viên */}
+          <Route path="/manager-login" element={<LoginAdmin />} />
+
+          {/* =============== CỤM 2: ROUTES CHO QUẢN TRỊ VIÊN (ADMIN INDUSTRIAL ROUTING) =============== */}
+          {/* ProtectedRoute chặn quyền truy cập trực tiếp nếu tài khoản không mang role "admin" */}
+          <Route element={<ProtectedRoute allowedRoles={["admin"]} />}>
+            <Route element={<AdminLayout />}>
+              {/* Sử dụng cấu trúc Nested Route lồng nhau để giữ nguyên Sidebar/Navbar hành chính của Admin */}
+              <Route path="/admin-dashboard" element={<AdminLayoutDashboard />}>
+                <Route index element={<AdminDashboard />} /> {/* Route mặc định hiển thị báo cáo tổng quan */}
+                <Route path='profile' element={<ProfilePage />} />
+
+                {/* Phân hệ Quản lý Tài khoản Nhân viên */}
+                <Route path='employees' element={<EmployeeList />} />
+                <Route path='employees/add' element={<AddEmployee />} />
+                <Route path='employees/:id' element={<EditEmployee />} />
+
+                {/* Phân hệ Quản lý Hồ sơ Khách hàng */}
+                <Route path='customers' element={<CustomerListPage />} />
+                <Route path='customers/add' element={<AddCutomers />} />
+                <Route path='customers/:id' element={<EditCustomers />} />
+
+                {/* Phân hệ Quản lý Hệ thống Chi nhánh cửa hàng */}
+                <Route path='branches' element={<BranchList />} />
+                <Route path="branches/add" element={<BranchForm />} />
+                <Route path="branches/:id" element={<BranchForm />} />
+
+                {/* Phân hệ Thiết lập Danh mục Dịch vụ và Bảng giá */}
+                <Route path="services" element={<ServiceList />} />
+                <Route path="services/add" element={<ServiceForm />} />
+                <Route path="services/:id" element={<ServiceForm />} />
+
+                {/* Phân hệ Quản lý & Duyệt Đơn đặt lịch (Orders) */}
+                <Route path="orders" element={<OrderList />} />
+                <Route path="orders/:id" element={<OrderDetail />} />
+
+                {/* Tính năng Điều phối & Phân chia ca làm việc cho nhân viên */}
+                <Route path="assign-shifts" element={<AssignShiftsPage />} />
+
+                {/* Kênh Chat trực tuyến hỗ trợ khách hàng */}
+                <Route path="chat" element={<AdminChat />} />
+
+                {/* Route bắt lỗi 404 bên trong giao diện trang Dashboard Admin */}
+                <Route path="*" element={<AdminNotFound />} />
+              </Route>
             </Route>
           </Route>
-        </Route>
-        
-        {/* staff */}
-        <Route element={<ProtectedRoute allowedRoles={["staff"]}/>} >
-           <Route element={<StaffLayout />}>
-            <Route path="/staff-dashboard" element={<StaffLayoutDashboard />}>
-              <Route index element={<StaffHome />} />
-              <Route path='tasks' element={<StaffWorkPage />} />
-              <Route path='schedule' element={<StaffSchedulePage />} />
-              <Route path='profile' element={<ProfileStaffPage />} />
-              <Route path='feedback' element={<FeedbackPage />} />
-            </Route>
-           </Route>
-        </Route>
-      </Routes>
-    </div>
 
-    <Toaster 
-        position="top-right"
+          {/* =============== CỤM 3: ROUTES CHO NHÂN VIÊN GIA CÔNG (STAFF ROUTING) =============== */}
+          {/* Chỉ cho phép tài khoản có role "staff" đi qua bộ lọc bảo vệ */}
+          <Route element={<ProtectedRoute allowedRoles={["staff"]} />} >
+            <Route element={<StaffLayout />}>
+              <Route path="/staff-dashboard" element={<StaffLayoutDashboard />}>
+                <Route index element={<StaffHome />} /> {/* Màn hình chính ghi nhận tổng số công việc trong ngày */}
+                <Route path='tasks' element={<StaffWorkPage />} />     {/* Danh sách đầu việc cần thực hiện */}
+                <Route path='schedule' element={<StaffSchedulePage />} /> {/* Xem lịch trực ca tuần/tháng */}
+                <Route path='profile' element={<ProfileStaffPage />} />   {/* Sửa thông tin cá nhân nhân viên */}
+                <Route path='feedback' element={<FeedbackPage />} />     {/* Xem đánh giá chấm điểm từ khách hàng */}
+              </Route>
+            </Route>
+          </Route>
+        </Routes>
+      </div>
+
+      {/* --- THÀNH PHẦN TOAST THÔNG BÁO TOÀN CỤC (GLOBAL ALERTS) --- */}
+      <Toaster
+        position="top-right" // Vị trí hiển thị popup góc trên cùng bên phải màn hình
         toastOptions={{
-          duration: 3000,
+          duration: 3000,     // Tự động ẩn thông báo sau 3 giây
           style: {
             borderRadius: '8px',
             background: '#333',

@@ -1,14 +1,37 @@
+/* --- TÍCH HỢP TAILWIND CSS FRAMEWORK --- */
+/* Cú pháp @import "tailwindcss" mới (áp dụng từ Tailwind v4) giúp nạp toàn bộ tiện ích class vào ứng dụng */
 @import "tailwindcss";
-*{
+
+/* --- RESET CSS TOÀN CỤC --- */
+* {
     /* padding: 0;
     margin: 0; */
+    
+    /* Thiết lập hộp box-sizing bao gồm cả phần border và padding vào chiều rộng/cao tổng thể của phần tử, 
+       chống lỗi vỡ giao diện (layout) khi tùy biến kích thước */
     box-sizing: border-box;
 }
+
+/* --- ĐỊNH NGHĨA CHUYỂN ĐỘNG (KEYFRAMES ANIMAION) --- */
+/* Tạo hiệu ứng chuyển động có tên là 'slide-in' (Trượt từ bên ngoài màn hình phía bên phải vào vị trí chính thức) */
 @keyframes slide-in {
-  0% { transform: translateX(100%); opacity: 0; }
-  100% { transform: translateX(0); opacity: 1; }
+  0% { 
+    transform: translateX(100%); /* Bắt đầu tại vị trí đẩy hẳn sang phải 100% chiều rộng của chính nó */
+    opacity: 0;                  /* Ẩn hoàn toàn phần tử bằng cách hạ độ trong suốt về 0 */
+  }
+  100% { 
+    transform: translateX(0);    /* Trả về vị trí mặc định ban đầu trên trục X */
+    opacity: 1;                  /* Hiển thị rõ nét phần tử bằng cách nâng độ trong suốt lên 1 */
+  }
 }
+
+/* --- LỚP CSS SỬ DỤNG HOẠT ẢNH (UTILITY ANIMATION CLASS) --- */
+/* Class này thường dùng để gán cho các phần tử như Toast thông báo, Modal popup hoặc Sidebar Drawer */
 .animate-slide-in {
+  /* Gọi hoạt ảnh 'slide-in' đã định nghĩa ở trên với thời gian diễn ra là 0.3 giây, 
+     nhịp điệu mượt mà lúc kết thúc (ease-out), và giữ nguyên trạng thái ở khung hình cuối cùng (forwards) */
   animation: slide-in 0.3s ease-out forwards;
+  
+  /* Cấu hình phân bổ khoảng cách đều nhau giữa các phần tử con bên trong nếu phần tử này sử dụng chế độ Flexbox */
   justify-content: space-between;
 }
