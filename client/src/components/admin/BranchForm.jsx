@@ -4,6 +4,7 @@ import axios from "axios";
 import toast from "react-hot-toast";
 
 export default function BranchForm() {
+  // Khởi tạo state lưu trữ dữ liệu của form chi nhánh
   const [form, setForm] = useState({
     name: "",
     address: "",
@@ -11,39 +12,49 @@ export default function BranchForm() {
     revenue: 0,
   });
 
-  const navigate = useNavigate();
-  const { id } = useParams(); // nếu có id → đang update
+  const navigate = useNavigate(); // Hook điều hướng trang của react-router-dom
+  const { id } = useParams(); // Lấy id từ URL. Nếu có id => đang ở chế độ chỉnh sửa (Update), ngược lại là thêm mới (Create)
 
+  // useEffect tự động chạy khi component mount hoặc khi id thay đổi
   useEffect(() => {
+    // Nếu có id trên URL, tiến hành gọi API lấy thông tin chi tiết chi nhánh để đổ vào form
     if (id) {
       axios.get(`http://localhost:5000/api/branches/get/${id}`).then((res) => {
-        setForm(res.data);
+        setForm(res.data); // Cập nhật dữ liệu nhận được từ API vào state form
       });
     }
   }, [id]);
 
+  // Hàm xử lý sự kiện khi người dùng thay đổi giá trị trong các ô input
   const handleChange = (e) => {
+    // Cập nhật thuộc tính tương ứng (dựa vào thuộc tính 'name' của input) trong state form
     setForm({ ...form, [e.target.name]: e.target.value });
   };
 
+  // Hàm xử lý khi người dùng submit (ấn nút gửi) form
   const handleSubmit = async (e) => {
-    e.preventDefault();
+    e.preventDefault(); // Ngăn chặn hành vi reload trang mặc định của form
     try {
       if (id) {
+        // Nếu có id: Thực hiện gọi API PUT để cập nhật thông tin chi nhánh
         await axios.put(`http://localhost:5000/api/branches/update/${id}`, form);
-        toast.success("Cập nhật chi nhánh thành công!");
+        toast.success("Cập nhật chi nhánh thành công!"); // Hiển thị thông báo thành công
       } else {
+        // Nếu không có id: Thực hiện gọi API POST để tạo mới chi nhánh
         await axios.post("http://localhost:5000/api/branches/create", form);
-        toast.success("Thêm chi nhánh thành công!");
+        toast.success("Thêm chi nhánh thành công!"); // Hiển thị thông báo thành công
       }
+      // Sau khi xử lý API thành công, điều hướng người dùng về trang danh sách chi nhánh
       navigate("/admin-dashboard/branches");
     } catch (err) {
+      // Log lỗi ra console nếu quá trình lưu dữ liệu thất bại
       console.error("Error saving branch:", err);
     }
   };
 
   return (
     <div className="w-full bg-white shadow-md p-8 rounded-lg">
+      {/* Tiêu đề thay đổi linh hoạt tùy thuộc vào việc đang thêm mới hay cập nhật */}
       <h2 className="text-2xl font-bold text-gray-800 mb-6">
         {id ? "Cập nhật chi nhánh" : "Thêm chi nhánh mới"}
       </h2>
@@ -109,7 +120,7 @@ export default function BranchForm() {
           />
         </div>
 
-        {/* Nút submit */}
+        {/* Nút submit - Chữ hiển thị thay đổi động theo trạng thái id */}
         <button
           type="submit"
           className="w-full px-4 py-2 bg-indigo-600 text-white font-medium rounded-lg shadow hover:bg-indigo-700 transition"

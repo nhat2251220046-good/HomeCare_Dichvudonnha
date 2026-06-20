@@ -4,6 +4,7 @@ import axios from "axios";
 import toast from "react-hot-toast";
 
 export default function ServiceForm() {
+  // Khởi tạo state lưu trữ dữ liệu của form dịch vụ
   const [form, setForm] = useState({
     name: "",
     description: "",
@@ -12,43 +13,53 @@ export default function ServiceForm() {
     active: true,
   });
 
-  const navigate = useNavigate();
-  const { id } = useParams(); // nếu có id → đang update
+  const navigate = useNavigate(); // Hook hỗ trợ chuyển hướng trang
+  const { id } = useParams(); // Lấy mã id từ thanh URL. Nếu tồn tại id => Đang cập nhật, ngược lại => Thêm mới
 
+  // useEffect tự động kích hoạt khi component được tải hoặc khi id thay đổi
   useEffect(() => {
+    // Nếu có id trên URL, thực hiện gọi API để lấy thông tin chi tiết của dịch vụ đổ lại vào form
     if (id) {
       axios.get(`http://localhost:5000/api/services/get/${id}`).then((res) => {
-        setForm(res.data);
+        setForm(res.data); // Cập nhật dữ liệu từ backend vào state form
       });
     }
   }, [id]);
 
+  // Hàm xử lý chung khi người dùng thay đổi dữ liệu trong các ô nhập liệu
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
     setForm({
       ...form,
+      // Kiểm tra kiểu input: Nếu là checkbox thì lấy giá trị 'checked' (true/false), ngược lại lấy 'value' dạng chữ/số
       [name]: type === "checkbox" ? checked : value,
     });
   };
 
+  // Hàm xử lý khi người dùng ấn nút gửi form (Submit)
   const handleSubmit = async (e) => {
-    e.preventDefault();
+    e.preventDefault(); // Ngăn chặn sự kiện reload trang mặc định của form HTML
     try {
       if (id) {
+        // Chế độ Cập nhật: Thực hiện gọi API PUT để lưu thông tin chỉnh sửa
         await axios.put(`http://localhost:5000/api/services/update/${id}`, form);
         toast.success("Cập nhật dịch vụ thành công!");
       } else {
+        // Chế độ Tạo mới: Thực hiện gọi API POST để thêm một dịch vụ mới
         await axios.post("http://localhost:5000/api/services/create", form);
         toast.success("Thêm dịch vụ mới thành công!");
       }
+      // Sau khi xử lý API thành công, điều hướng người dùng quay trở lại trang quản lý danh sách dịch vụ
       navigate("/admin-dashboard/services");
     } catch (err) {
+      // Ghi nhận lỗi ra tab console nếu quá trình gửi dữ liệu lên server thất bại
       console.error("Error saving service:", err);
     }
   };
 
   return (
     <div className="w-full bg-white shadow-md p-8 rounded-lg">
+      {/* Tiêu đề động hiển thị tùy thuộc vào tác vụ Thêm hay Sửa */}
       <h2 className="text-2xl font-bold text-gray-800 mb-6">
         {id ? "Cập nhật dịch vụ" : "Thêm dịch vụ mới"}
       </h2>
@@ -119,7 +130,6 @@ export default function ServiceForm() {
           <label className="font-medium text-gray-700">Dịch vụ hoạt động</label>
         </div>
 
-        
         {/* Nút submit */}
         <button
           type="submit"
