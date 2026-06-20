@@ -5,29 +5,33 @@ import axios from "axios";
 import "./AdminChat.css";
 
 const AdminChat = () => {
-  const { user } = useUser();
-  const [conversations, setConversations] = useState([]);
-  const [selectedConversation, setSelectedConversation] = useState(null);
-  const [messages, setMessages] = useState([]);
-  const [inputMessage, setInputMessage] = useState("");
-  const [isLoadingConversations, setIsLoadingConversations] = useState(false);
-  const [isLoadingMessages, setIsLoadingMessages] = useState(false);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [error, setError] = useState(null);
-  const socketRef = useRef(null);
-  const messagesEndRef = useRef(null);
-  const selectedConversationRef = useRef(null); // Ref để tránh stale closure trong socket handlers
+  const { user } = useUser(); // Lấy thông tin tài khoản admin đang đăng nhập từ Clerk Auth
 
-  // Cập nhật ref khi selectedConversation thay đổi
+  // --- QUẢN LÝ CÁC TRẠNG THÁI (STATES) ---
+  const [conversations, setConversations] = useState([]);         // Danh sách tất cả các cuộc hội thoại đang hoạt động
+  const [selectedConversation, setSelectedConversation] = useState(null); // Thông tin phòng chat hiện tại đang được chọn
+  const [messages, setMessages] = useState([]);                   // Danh sách các tin nhắn trong phòng chat đang mở
+  const [inputMessage, setInputMessage] = useState("");           // Dữ liệu nhập vào ô input tin nhắn
+  const [isLoadingConversations, setIsLoadingConversations] = useState(false); // Trạng thái tải danh sách phòng chat
+  const [isLoadingMessages, setIsLoadingMessages] = useState(false);           // Trạng thái tải nội dung tin nhắn
+  const [searchTerm, setSearchTerm] = useState("");               // Từ khóa tìm kiếm khách hàng theo Tên/Email
+  const [error, setError] = useState(null);                       // Lưu trữ thông báo lỗi kết nối hoặc API
+
+  // --- HỆ THỐNG QUẢN LÝ THAM CHIẾU (REFS) ---
+  const socketRef = useRef(null);      // Lưu trữ instance của Socket.io-client xuyên suốt vòng đời component
+  const messagesEndRef = useRef(null); // Ref gắn vào cuối danh sách tin nhắn để tự động cuộn (Auto-scroll)
+  const selectedConversationRef = useRef(null); // Giải pháp chống Stale Closure (Dữ liệu cũ kẹt trong socket handler)
+
+  // ĐỒNG BỘ REF: Luôn cập nhật giá trị phòng chat mới nhất vào biến tham chiếu Ref
   useEffect(() => {
     selectedConversationRef.current = selectedConversation;
   }, [selectedConversation]);
 
-  // Initialize socket and load conversations - chỉ chạy một lần khi mount
+  // --- KHOỞI TẠO KẾT NỐI REALTIME (SOCKET.IO INITIALIZATION) ---
   useEffect(() => {
     if (!user) return;
 
-    // Nếu socket đã tồn tại, không tạo lại
+    // Kiểm tra Singleton: Nếu kết nối đã tồn tại và đang chạy, không khởi tạo lại tránh rò rỉ bộ nhớ
     if (socketRef.current?.connected) {
       console.log("✅ Socket already connected, skipping init");
       loadConversations();
@@ -36,36 +40,38 @@ const AdminChat = () => {
 
     console.log("🔄 Initializing admin socket...");
 
+    // Cấu hình tham số kết nối với Backend Socket Server
     socketRef.current = io("http://localhost:5000", {
-      reconnection: true,
-      reconnectionDelay: 1000,
-      reconnectionAttempts: 5,
+      reconnection: true,             // Bật tính năng tự động kết nối lại khi mất mạng
+      reconnectionDelay: 1000,        // Thời gian chờ giữa các lần thử kết nối lại (1 giây)
+      reconnectionAttempts: 5,        // Số lần thử tối đa trước khi thông báo lỗi
       autoConnect: true,
     });
 
+    // Lắng nghe sự kiện kết nối thành công
     socketRef.current.on("connect", () => {
       console.log("✅ Admin socket connected");
+      // Đăng ký định danh tài khoản Admin với máy chủ Socket
       socketRef.current.emit("register_admin", user.id);
       setError(null);
     });
 
+    // SỰ KIỆN 1: Nhận tin nhắn trực tiếp qua Room WebSocket
     socketRef.current.on("receive_message", (data) => {
-      // Sử dụng ref để tránh stale closure
       const currentSelected = selectedConversationRef.current;
-      // Nếu đang mở conversation đó, thêm tin nhắn vào danh sách
+      // Nếu quản trị viên đang mở đúng căn phòng có tin nhắn đến -> Đẩy trực tiếp vào mảng tin nhắn trên màn hình
       if (currentSelected && data.conversationId === currentSelected.conversationId) {
         setMessages((prev) => [...prev, data]);
       }
-      // Luôn cập nhật danh sách conversations
+      // Làm mới danh sách hội thoại ở sidebar để cập nhật tin nhắn cuối cùng (Last message)
       loadConversations();
     });
 
+    // SỰ KIỆN 2: Nhận thông báo có tin nhắn mới từ luồng ngoài hệ thống phòng
     socketRef.current.on("new_message", (data) => {
-      // Sử dụng ref để tránh stale closure
       const currentSelected = selectedConversationRef.current;
-      // Nếu đang mở conversation của khách hàng vừa gửi tin nhắn, tải lại tin nhắn
+      // Gọi API nạp lại bộ tin nhắn đầy đủ nếu đang tương tác trực tiếp với khách hàng đó
       if (currentSelected && data.conversationId === currentSelected.conversationId) {
-        // Tải lại tin nhắn mới nhất
         axios.get(
           `http://localhost:5000/api/chat/messages/${data.conversationId}`,
           { timeout: 5000 }
@@ -73,22 +79,22 @@ const AdminChat = () => {
           setMessages(response.data.messages);
         }).catch((err) => console.error("Error reloading messages:", err));
       }
-      // Cập nhật danh sách conversations
       loadConversations();
     });
 
+    // Lắng nghe các sự kiện ngắt kết nối và lỗi mạng từ Socket Server
     socketRef.current.on("connect_error", (error) => {
       console.error("Socket connection error:", error);
-      setError("Không thể kết nối với máy chủ");
+      setError("Không thể kết nối với máy chủ Realtime");
     });
 
     socketRef.current.on("disconnect", (reason) => {
       console.log("❌ Admin socket disconnected:", reason);
     });
 
-    loadConversations();
+    loadConversations(); // Tải danh sách cuộc trò chuyện ban đầu khi ứng dụng gắn kết thành công
 
-    // Cleanup chỉ khi component unmount hoàn toàn
+    // CLEANUP FUNCTION: Ngắt kết nối socket hoàn toàn khi admin thoát khỏi trang Chat
     return () => {
       if (socketRef.current) {
         console.log("🧹 Cleaning up admin socket");
@@ -96,26 +102,27 @@ const AdminChat = () => {
         socketRef.current = null;
       }
     };
-  }, []); // Empty deps - chỉ chạy một lần khi mount
+  }, []);
 
-  // Auto scroll to latest message
+  // --- HIỆU ỨNG UX: TỰ ĐỘNG CUỘN ĐẾN TIN NHẮN MỚI NHẤT (AUTO SCROLL) ---
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // Join socket room when selected conversation changes
+  // --- HIỆU ỨNG ROOM CHAT: THAM GIA PHÒNG CHAT KHI THAY ĐỔI ĐỐI TƯỢNG (JOIN ROOM) ---
   useEffect(() => {
     if (selectedConversation && socketRef.current) {
       socketRef.current.emit("join_conversation", selectedConversation.conversationId);
     }
   }, [selectedConversation]);
 
+  // --- HÀM XỬ LÝ API: TẢI DANH SÁCH CÁC CUỘC HỘI THOẠI ĐANG HOẠT ĐỘNG ---
   const loadConversations = async () => {
     try {
       setIsLoadingConversations(true);
       setError(null);
       const response = await axios.get("http://localhost:5000/api/chat", {
-        params: { status: "active" },
+        params: { status: "active" }, // Chỉ lấy các cuộc trò chuyện chưa bị đóng
         timeout: 5000
       });
       setConversations(response.data.conversations);
@@ -127,22 +134,25 @@ const AdminChat = () => {
     }
   };
 
+  // --- HÀM XỬ LÝ UI: KHI ADMIN NHẤP CHỌN MỘT KHÁCH HÀNG ĐỂ CHAT ---
   const handleSelectConversation = async (conversation) => {
     setSelectedConversation(conversation);
     setIsLoadingMessages(true);
     try {
       setError(null);
+      // Phát tín hiệu tham gia phòng chat realtime của khách hàng này
       if (socketRef.current) {
         socketRef.current.emit("join_conversation", conversation.conversationId);
       }
 
+      // Lấy lịch sử tin nhắn của cuộc hội thoại
       const response = await axios.get(
         `http://localhost:5000/api/chat/messages/${conversation.conversationId}`,
         { timeout: 5000 }
       );
       setMessages(response.data.messages);
 
-      // Mark as read
+      // Đánh dấu toàn bộ tin nhắn trong phòng này là đã đọc (Mark as Read)
       await axios.patch(
         `http://localhost:5000/api/chat/read/${conversation.conversationId}`,
         {},
@@ -156,14 +166,16 @@ const AdminChat = () => {
     }
   };
 
+  // --- HÀM XỬ LÝ: GỬI TIN NHẮN ĐI (SEND MESSAGE LOGIC) ---
   const handleSendMessage = async (e) => {
     e.preventDefault();
+    // Chặn gửi tin nếu nội dung trống, chưa chọn phòng hoặc mất kết nối socket
     if (!inputMessage.trim() || !selectedConversation || !socketRef.current?.connected)
       return;
 
-    // Admin name - just use "Admin (Support)" for clarity
     const adminName = "Admin Hỗ Trợ";
 
+    // Cấu trúc dữ liệu Payload tin nhắn theo chuẩn Database Schema
     const messageData = {
       conversationId: selectedConversation.conversationId,
       senderId: user.id,
@@ -174,9 +186,10 @@ const AdminChat = () => {
 
     try {
       setError(null);
+      // Phát tin nhắn qua WebSocket lên Server để phân phối đến khách hàng ngay lập tức
       socketRef.current.emit("send_message", messageData);
-      
-      // Thêm tin nhắn vào danh sách ngay lập tức để UI phản hồi nhanh
+
+      // OPTIMISTIC UI UPDATE: Thêm tin nhắn tạm thời vào giao diện ngay lập tức giúp tăng trải nghiệm mượt mà
       const newMessage = {
         _id: `temp_${Date.now()}`,
         conversationId: selectedConversation.conversationId,
@@ -187,56 +200,64 @@ const AdminChat = () => {
         createdAt: new Date(),
       };
       setMessages((prev) => [...prev, newMessage]);
-      setInputMessage("");
+      setInputMessage(""); // Reset trống ô nhập liệu
     } catch (error) {
       console.error("Error sending message:", error);
       setError("Gửi tin nhắn thất bại");
     }
   };
 
+  // --- HÀM XỬ LÝ: ĐÓNG / KẾT THÚC CUỘC HỘI THOẠI (CLOSE CONVERSATION) ---
   const handleCloseConversation = async () => {
     if (!selectedConversation) return;
 
     try {
       setError(null);
+      // Gọi API cập nhật trạng thái cuộc hội thoại thành "closed" (Đã giải quyết)
       await axios.patch(
         `http://localhost:5000/api/chat/close/${selectedConversation.conversationId}`,
         {},
         { timeout: 5000 }
       );
-      setSelectedConversation(null);
-      setMessages([]);
-      loadConversations();
+      setSelectedConversation(null); // Giải phóng màn hình chat chính
+      setMessages([]);               // Xóa sạch bộ nhớ tin nhắn tạm thời
+      loadConversations();           // Tải lại sidebar để xóa phòng chat vừa đóng
     } catch (error) {
       console.error("Error closing conversation:", error);
       setError("Lỗi khi đóng cuộc hội thoại");
     }
   };
 
+  // --- TÍNH NĂNG CLIENT-SIDE FILTER: BỘ LỌC TÌM KIẾM KHÁCH HÀNG ---
   const filteredConversations = conversations.filter(
     (conv) =>
       conv.customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       conv.customerEmail?.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
+  // Hiển thị màn hình chờ nếu phiên đăng nhập tài khoản chưa xác thực xong
   if (!user) {
-    return <div className="loading-container">Loading...</div>;
+    return <div className="loading-container">Loading Auth...</div>;
   }
 
   return (
     <div className="admin-chat-container">
       <div className="chat-content">
+        {/* Banner hiển thị lỗi tập trung ở đầu màn hình */}
         {error && (
           <div className="admin-error-message">
             ⚠️ {error}
           </div>
         )}
+
+        {/* ================= PHẦN 1: THANH SIDEBAR BÊN TRÁI (DANH SÁCH PHÒNG CHAT) ================= */}
         <div className="chat-sidebar">
           <div className="sidebar-header">
             <h2>Chat Support</h2>
             <span className="conversation-count">{conversations.length}</span>
           </div>
 
+          {/* Ô nhập từ khóa tìm kiếm nhanh khách hàng */}
           <div className="search-box">
             <input
               type="text"
@@ -256,9 +277,8 @@ const AdminChat = () => {
               filteredConversations.map((conversation) => (
                 <div
                   key={conversation._id}
-                  className={`conversation-item ${
-                    selectedConversation?._id === conversation._id ? "active" : ""
-                  }`}
+                  className={`conversation-item ${selectedConversation?._id === conversation._id ? "active" : ""
+                    }`}
                   onClick={() => handleSelectConversation(conversation)}
                 >
                   <div className="conversation-info">
@@ -267,12 +287,13 @@ const AdminChat = () => {
                       {conversation.lastMessage?.substring(0, 40) || "Chưa có tin nhắn"}
                     </div>
                   </div>
+                  {/* Format thời gian của tin nhắn cuối cùng gửi đến */}
                   <div className="conversation-time">
                     {conversation.lastMessageTime
                       ? new Date(conversation.lastMessageTime).toLocaleTimeString(
-                          "vi-VN",
-                          { hour: "2-digit", minute: "2-digit" }
-                        )
+                        "vi-VN",
+                        { hour: "2-digit", minute: "2-digit" }
+                      )
                       : ""}
                   </div>
                 </div>
@@ -281,9 +302,11 @@ const AdminChat = () => {
           </div>
         </div>
 
+        {/* ================= PHẦN 2: KHÔNG GIAN CHAT CHÍNH BÊN PHẢI (CHAT MAIN WORKSPACE) ================= */}
         <div className="chat-main">
           {selectedConversation ? (
             <>
+              {/* Thanh tiêu đề hiển thị thông tin khách hàng đang tương tác */}
               <div className="chat-header-admin">
                 <div className="header-info">
                   <h3>{selectedConversation.customerName}</h3>
@@ -297,6 +320,7 @@ const AdminChat = () => {
                 </button>
               </div>
 
+              {/* Phân vùng chứa luồng danh sách nội dung các tin nhắn */}
               <div className="chat-messages-admin">
                 {isLoadingMessages ? (
                   <div className="loading">Đang tải tin nhắn...</div>
@@ -306,7 +330,7 @@ const AdminChat = () => {
                   messages.map((msg) => (
                     <div
                       key={msg._id}
-                      className={`message ${msg.senderType}`}
+                      className={`message ${msg.senderType}`} // Động class "admin" hoặc "customer" để đổi CSS màu sắc bong bóng chat
                     >
                       <div className="message-sender">{msg.senderName}</div>
                       <div className="message-text">{msg.message}</div>
@@ -319,9 +343,11 @@ const AdminChat = () => {
                     </div>
                   ))
                 )}
+                {/* Điểm Neo giúp hàm scrollIntoView xác định vị trí cuộn xuống dưới cùng */}
                 <div ref={messagesEndRef} />
               </div>
 
+              {/* Form gửi tin nhắn hỗ trợ */}
               <form onSubmit={handleSendMessage} className="chat-input-form-admin">
                 <input
                   type="text"
@@ -341,8 +367,9 @@ const AdminChat = () => {
               </form>
             </>
           ) : (
+            /* Trạng thái trống khi Admin chưa bấm chọn bất cứ phòng chat nào */
             <div className="no-selected">
-              <p>Chọn một cuộc hội thoại để bắt đầu</p>
+              <p>Chọn một cuộc hội thoại từ danh sách bên trái để bắt đầu hỗ trợ</p>
             </div>
           )}
         </div>

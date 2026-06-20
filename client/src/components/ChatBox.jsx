@@ -5,6 +5,7 @@ import axios from "axios";
 import "./ChatBox.css";
 
 const ChatBox = () => {
+  // --- HÀM BỌC AN TOÀN (SAFE WRAPPERS) CHO MÔI TRƯỜNG DEV TRÁNH CRASH KHI THIẾU CLERK ---
   function useSafeUser() {
     try {
       return useUser();
@@ -31,24 +32,26 @@ const ChatBox = () => {
     }
   }
 
+  // --- QUẢN LÝ TRẠNG THÁI (STATES) VÀ ĐỊNH DANH (REFS) ---
   const { user } = useSafeUser();
-  const [isOpen, setIsOpen] = useState(false);
-  const [messages, setMessages] = useState([]);
-  const [inputMessage, setInputMessage] = useState("");
-  const [conversation, setConversation] = useState(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const socketRef = useRef(null);
-  const messagesEndRef = useRef(null);
+  const [isOpen, setIsOpen] = useState(false);         // Trạng thái Ẩn/Hiện của cửa sổ chat
+  const [messages, setMessages] = useState([]);         // Danh sách các tin nhắn trong cuộc trò chuyện
+  const [inputMessage, setInputMessage] = useState(""); // Nội dung tin nhắn đang nhập ở input
+  const [conversation, setConversation] = useState(null); // Thông tin phiên hội thoại hiện tại
+  const [isLoading, setIsLoading] = useState(false);     // Trạng thái chờ xử lý logic
+  const [error, setError] = useState(null);             // Lưu trữ thông báo lỗi hệ thống/kết nối
+  const socketRef = useRef(null);                       // Lưu trữ instance của Socket Client để tránh re-render tạo lại kết nối
+  const messagesEndRef = useRef(null);                 // Điểm mốc DOM ở cuối danh sách tin nhắn để hỗ trợ cuộn chuột tự động
 
-  // Initialize socket and conversation
+  // --- SIDE EFFECT 1: KHỞI TẠO CUỘC TRÒ CHUYỆN VÀ KẾT NỐI REALTIME (SOCKET.IO) ---
   useEffect(() => {
     if (!user) return;
 
     const initializeChat = async () => {
       try {
         setError(null);
-        // Create or get conversation
+
+        // Bước 1: Tạo mới hoặc lấy lại phiên hội thoại cũ dựa trên ID khách hàng
         const convResponse = await axios.post(
           "http://localhost:5000/api/chat/conversation",
           {
@@ -60,30 +63,34 @@ const ChatBox = () => {
         );
         setConversation(convResponse.data.conversation);
 
-        // Load messages
+        // Bước 2: Tải lại lịch sử tin nhắn của phiên hội thoại này từ Database
         const msgResponse = await axios.get(
           `http://localhost:5000/api/chat/messages/${convResponse.data.conversation.conversationId}`,
           { timeout: 5000 }
         );
         setMessages(msgResponse.data.messages);
 
-        // Connect to socket
+        // Bước 3: Thiết lập kết nối Socket.io Client đến Server Node.js Backend
         if (!socketRef.current) {
           socketRef.current = io("http://localhost:5000", {
-            reconnection: true,
-            reconnectionDelay: 1000,
-            reconnectionAttempts: 3,
+            reconnection: true,          // Bật tính năng tự động kết nối lại nếu mất mạng
+            reconnectionDelay: 1000,     // Khoảng thời gian chờ giữa các lần thử kết nối lại (ms)
+            reconnectionAttempts: 3,     // Số lần thử kết nối lại tối đa trước khi dừng hẳn
           });
 
+          // Sự kiện kết nối Socket thành công
           socketRef.current.on("connect", () => {
             console.log("✅ Socket connected");
+            // Đăng ký định danh Client với server để nhận diện luồng tin nhắn
             socketRef.current.emit("register_customer", user.id);
           });
 
+          // Lắng nghe sự kiện nhận tin nhắn mới realtime từ phía Admin/Server
           socketRef.current.on("receive_message", (data) => {
             setMessages((prev) => [...prev, data]);
           });
 
+          // Sự kiện bắt lỗi khi không thể kết nối tới Socket Server
           socketRef.current.on("connect_error", (error) => {
             console.error("Socket connection error:", error);
             setError("Không thể kết nối với máy chủ");
@@ -97,6 +104,7 @@ const ChatBox = () => {
 
     initializeChat();
 
+    // HÀM CLEANUP: Ngắt kết nối socket khi component bị hủy (Unmount) để tránh rò rỉ bộ nhớ (Memory Leak)
     return () => {
       if (socketRef.current) {
         socketRef.current.disconnect();
@@ -105,15 +113,17 @@ const ChatBox = () => {
     };
   }, [user]);
 
-  // Auto scroll to latest message
+  // --- SIDE EFFECT 2: TỰ ĐỘNG CUỘN XUỐNG DƯỚI CÙNG KHI CÓ TIN NHẮN MỚI ---
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  // --- HÀM XỬ LÝ SỰ KIỆN GỬI TIN NHẮN (SEND MESSAGE) ---
   const handleSendMessage = async (e) => {
     e.preventDefault();
     if (!inputMessage.trim() || !conversation) return;
 
+    // Định dạng gói tin nhắn chuẩn gửi đi
     const messageData = {
       conversationId: conversation.conversationId,
       senderId: user.id,
@@ -124,19 +134,23 @@ const ChatBox = () => {
 
     try {
       setError(null);
+      // Phát tín hiệu gửi tin nhắn lên cổng Socket real-time
       socketRef.current?.emit("send_message", messageData);
-      setInputMessage("");
+      setInputMessage(""); // Xóa nội dung khung nhập liệu sau khi gửi thành công
     } catch (error) {
       console.error("Error sending message:", error);
       setError("Gửi tin nhắn thất bại");
     }
   };
 
+  // --- HÀM XỬ LÝ MỞ KHUNG CHAT VÀ ĐÁNH DẤU ĐÃ ĐỌC ---
   const handleOpen = async () => {
     setIsOpen(true);
     if (conversation && socketRef.current) {
+      // Tham gia phòng chat cụ thể (Room Room-based Chat)
       socketRef.current.emit("join_conversation", conversation.conversationId);
-      // Mark as read
+
+      // Gọi API cập nhật trạng thái "Đã đọc tin nhắn" của toàn bộ phiên chat này
       try {
         await axios.patch(
           `http://localhost:5000/api/chat/read/${conversation.conversationId}`,
@@ -149,10 +163,12 @@ const ChatBox = () => {
     }
   };
 
+  // Nếu người dùng chưa đăng nhập, ẩn hoàn toàn component ChatBox
   if (!user) return null;
 
   return (
     <div className="chat-box-container">
+      {/* NÚT BONG BÓNG CHAT (Hiển thị khi khung chat đang đóng) */}
       {!isOpen && (
         <button
           className="chat-bubble"
@@ -163,8 +179,10 @@ const ChatBox = () => {
         </button>
       )}
 
+      {/* CỬA SỔ CHAT CHI TIẾT */}
       {isOpen && (
         <div className="chat-window">
+          {/* Thanh tiêu đề trên của khung chat */}
           <div className="chat-header">
             <h3>Chat Hỗ Trợ</h3>
             <button
@@ -175,12 +193,14 @@ const ChatBox = () => {
             </button>
           </div>
 
+          {/* Khối hiển thị lỗi kết nối nếu có */}
           {error && (
             <div className="error-message">
               ⚠️ {error}
             </div>
           )}
 
+          {/* Vùng hiển thị toàn bộ nội dung tin nhắn */}
           <div className="chat-messages">
             {messages.length === 0 ? (
               <div className="no-messages">Bắt đầu cuộc hội thoại</div>
@@ -192,6 +212,7 @@ const ChatBox = () => {
                 >
                   <div className="message-sender">{msg.senderName}</div>
                   <div className="message-text">{msg.message}</div>
+                  {/* Định dạng thời gian gửi tin nhắn (Giờ:Phút) theo chuẩn Việt Nam */}
                   <div className="message-time">
                     {new Date(msg.createdAt).toLocaleTimeString("vi-VN", {
                       hour: "2-digit",
@@ -201,9 +222,11 @@ const ChatBox = () => {
                 </div>
               ))
             )}
+            {/* Điểm Neo cố định phục vụ tự động Scroll */}
             <div ref={messagesEndRef} />
           </div>
 
+          {/* Form nhập liệu và gửi tin nhắn */}
           <form onSubmit={handleSendMessage} className="chat-input-form">
             <input
               type="text"
@@ -211,6 +234,7 @@ const ChatBox = () => {
               onChange={(e) => setInputMessage(e.target.value)}
               placeholder="Nhập tin nhắn..."
               className="chat-input"
+              // Vô hiệu hóa input nếu socket bị mất kết nối hoặc hệ thống đang bận tải
               disabled={!socketRef.current?.connected || isLoading}
             />
             <button
